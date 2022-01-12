@@ -80,11 +80,25 @@ static void itacns_init_cns_card(sc_card_t *card)
 
 static int itacns_match_cns_card(sc_card_t *card)
 {
+	u8 manufacturer_code;
+	u8 manufacturer_mask;
+	u8 fw_major;
+
 	if (15 != card->reader->atr_info.hist_bytes_len
 			|| 0 != memcmp(card->reader->atr_info.hist_bytes+9, "CNS", 3))
 		return 0;
 
 	card->type = SC_CARD_TYPE_ITACNS_CNS;
+
+	manufacturer_code = card->reader->atr_info.hist_bytes[2];
+	manufacturer_mask = card->reader->atr_info.hist_bytes[3];
+	fw_major = card->reader->atr_info.hist_bytes[4];
+
+	if (manufacturer_code == ITACNS_ICMAN_INFINEON &&
+	    manufacturer_mask == ITACNS_MASKMAN_IDEMIA &&
+	    fw_major >= 32) {
+			card->type = SC_CARD_TYPE_ITACNS_CNS_IDEMIA_2021;
+	}
 
 	return 1;
 }
@@ -147,11 +161,12 @@ static int itacns_init(sc_card_t *card)
 		| SC_ALGORITHM_RSA_HASHES
 		;
 
-	_sc_card_add_rsa_alg(card, 1024, flags, 0);
-
-	if (card->version.hw_major >= 1 && card->version.hw_minor >= 1) {
+	if ((card->version.hw_major >= 1 && card->version.hw_minor >= 1) ||
+	    card->type == SC_CARD_TYPE_ITACNS_CNS_IDEMIA_2021) {
 		card->caps |= SC_CARD_CAP_APDU_EXT;
 		_sc_card_add_rsa_alg(card, 2048, flags, 0);
+	} else {
+		_sc_card_add_rsa_alg(card, 1024, flags, 0);
 	}
 	return SC_SUCCESS;
 }
@@ -476,6 +491,10 @@ itacns_get_challenge(sc_card_t *card, u8 *rnd, size_t len)
 {
 	size_t max_chunk = 0x100;
 	size_t done = 0;
+
+	if (card->type == SC_CARD_TYPE_ITACNS_CNS_IDEMIA_2021) {
+		max_chunk = 0x20;
+	}
 
 	while (done < len) {
 		size_t req_len = MIN(max_chunk, len - done);
