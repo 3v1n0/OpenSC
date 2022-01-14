@@ -471,6 +471,22 @@ itacns_card_ctl(sc_card_t *card, unsigned long cmd, void *ptr)
 	return SC_ERROR_NOT_SUPPORTED;
 }
 
+static int
+itacns_get_challenge(sc_card_t *card, u8 *rnd, size_t len)
+{
+	size_t max_chunk = 0x100;
+	size_t done = 0;
+
+	while (done < len) {
+		size_t req_len = MIN(max_chunk, len - done);
+		int gotlen = default_ops->get_challenge(card, rnd + done, req_len);
+		done += gotlen;
+		LOG_TEST_RET(card->ctx, gotlen, "Get Challenge");
+	}
+
+	return (int) done;
+}
+
 static struct sc_card_driver * sc_get_driver(void)
 {
 	if (!default_ops)
@@ -486,6 +502,7 @@ static struct sc_card_driver * sc_get_driver(void)
 	itacns_ops.list_files = itacns_list_files;
 	itacns_ops.select_file = itacns_select_file;
 	itacns_ops.card_ctl = itacns_card_ctl;
+	itacns_ops.get_challenge = itacns_get_challenge;
 	return &itacns_drv;
 }
 
