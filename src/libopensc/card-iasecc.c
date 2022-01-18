@@ -19,6 +19,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
+#include "sm.h"
+#include <openssl/dh.h>
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
@@ -32,6 +34,7 @@
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#include <openssl/objects.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <openssl/rsa.h>
@@ -107,6 +110,37 @@ static const struct sc_atr_table iasecc_known_atrs[] = {
 		.name = "IAS/ECC CPxCL",
 		.type = SC_CARD_TYPE_IASECC_CPXCL,
 	},
+	{
+		.atr  = "3B:8F:80:01:80:31:80:65:B0:85:03:00:EF:12:0F:FF:82:90:00:73",
+		.name = "IAS/ECC Italian CIE V3",
+		.type = SC_CARD_TYPE_IASECC_ITA_CIE_V3,
+	},
+	{
+		.atr  = "3B:8F:80:01:80:31:80:65:B0:85:04:00:11:12:0F:FF:82:90:00:8A",
+		.name = "IAS/ECC Italian CIE V3",
+		.type = SC_CARD_TYPE_IASECC_ITA_CIE_V3,
+	},
+	{
+		.atr     = "3B:8E:80:01:80:31:80:65:49:54:4E:58:50:12:0F:00:00:00:00",
+		.atrmask = "FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:00:00:00:00",
+		.name    = "IAS/ECC Italian CIE V3",
+		.type    = SC_CARD_TYPE_IASECC_ITA_CIE_V3,
+	},
+	{
+		.atr  = "3B:8B:80:01:80:66:47:50:00:B8:00:7F:82:90:00:2E",
+		.name = "IAS/ECC Italian CIE V3",
+		.type = SC_CARD_TYPE_IASECC_ITA_CIE_V3,
+	},
+	{
+		.atr  = "3B:80:80:01:01",
+		.name = "IAS/ECC Italian CIE V3",
+		.type = SC_CARD_TYPE_IASECC_ITA_CIE_V3,
+	},
+	{
+		.atr  = "3B:8B:80:01:80:66:47:50:00:B8:00:94:82:90:00:C5",
+		.name = "IAS/ECC Italian CIE V3",
+		.type = SC_CARD_TYPE_IASECC_ITA_CIE_V3,
+	},
 	{ NULL, NULL, NULL, 0, 0, NULL }
 };
 
@@ -116,6 +150,14 @@ static struct sc_aid OberthurIASECC_AID = {
 
 static struct sc_aid MIIASECC_AID = {
 	{ 0x4D, 0x49, 0x4F, 0x4D, 0x43, 0x54}, 6
+};
+
+static struct sc_aid GemaltoCIE_AID = {
+	{ 0xA0, 0x00, 0x00, 0x00, 0x30, 0x80, 0x00, 0x00, 0x00, 0x09, 0x81, 0x60, 0x01 }, 13
+};
+
+static struct sc_aid ITA_CIE_AID = {
+	{ 0xA0, 0x00, 0x00, 0x00, 0x00, 0x39 }, 6
 };
 
 struct iasecc_pin_status  {
@@ -295,7 +337,8 @@ iasecc_select_mf(struct sc_card *card, struct sc_file **file_out)
 		apdu.resp = apdu_resp;
 
 		/* TODO: this might be obsolete now that 0x0c (no data) is default for p2 */
-		if (card->type == SC_CARD_TYPE_IASECC_MI2)
+		if (card->type == SC_CARD_TYPE_IASECC_MI2 ||
+		    card->type == SC_CARD_TYPE_IASECC_ITA_CIE_V3)
 			apdu.p2 = 0x04;
 
 		rv = sc_transmit_apdu(card, &apdu);
@@ -651,6 +694,724 @@ iasecc_init_cpx(struct sc_card *card)
 	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
 }
 
+static int
+iasecc_init_ita_cie_select_aid_ias(struct sc_card *card)
+{
+	// struct sc_context *ctx = card->ctx;
+	// struct sc_apdu apdu;
+	// int rv;
+
+	// LOG_FUNC_CALLED(ctx);
+
+	// sc_format_apdu(card, &apdu, SC_APDU_CASE_3_SHORT, 0xa4, 0x04, 0x0c);
+	// uint8_t AID[] = { 0xA0, 0x00, 0x00, 0x00, 0x30, 0x80, 0x00, 0x00,
+	//                   0x00, 0x09, 0x81, 0x60, 0x01 };
+	// apdu.data = AID;
+	// apdu.lc = apdu.datalen = 13;
+	// rv = sc_transmit_apdu(card, &apdu);
+	// LOG_TEST_RET(ctx, rv, "APDU transmit failed");
+	// rv = sc_check_sw(card, apdu.sw1, apdu.sw2);
+	// LOG_TEST_RET(ctx, rv, "IAS selection error");
+
+	// LOG_FUNC_RETURN(ctx, rv);
+
+	struct sc_context *ctx = card->ctx;
+	unsigned char resp[0x100];
+	size_t resp_len;
+	int rv = 0;
+
+	LOG_FUNC_CALLED(ctx);
+
+	resp_len = sizeof(resp);
+	rv = iasecc_select_aid(card, &GemaltoCIE_AID, resp, &resp_len);
+	LOG_TEST_RET(ctx, rv, "IASECC: failed to select CIE IAS/ECC applet");
+
+	if (!card->ef_atr)
+		card->ef_atr = calloc(1, sizeof(struct sc_ef_atr));
+	if (!card->ef_atr)
+		LOG_FUNC_RETURN(ctx, SC_ERROR_OUT_OF_MEMORY);
+
+	memcpy(card->ef_atr->aid.value, GemaltoCIE_AID.value, GemaltoCIE_AID.len);
+	card->ef_atr->aid.len = GemaltoCIE_AID.len;
+
+	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
+}
+
+static int
+iasecc_init_ita_cie_select_cie_aid(struct sc_card *card)
+{
+	struct sc_context *ctx = card->ctx;
+	unsigned char resp[0x100];
+	size_t resp_len;
+	int rv = 0;
+
+	LOG_FUNC_CALLED(ctx);
+
+	resp_len = sizeof(resp);
+	rv = iasecc_select_aid(card, &ITA_CIE_AID, resp, &resp_len);
+	LOG_TEST_RET(ctx, rv, "IASECC: failed to select CIE IAS/ECC applet");
+
+	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
+}
+
+static int
+iasecc_init_ita_cie(struct sc_card *card)
+{
+	struct sc_context *ctx = card->ctx;
+	struct sc_path path;
+	sc_file_t *file;
+	u8 rbuf[SC_MAX_APDU_BUFFER_SIZE];
+	unsigned int flags;
+	int rv = 0;
+
+	LOG_FUNC_CALLED(ctx);
+
+	flags = IASECC_CARD_DEFAULT_FLAGS;
+	// CKF_LOGIN_REQUIRED
+
+	card->caps = IASECC_CARD_DEFAULT_CAPS;
+	// & ~SC_CARD_CAP_APDU_EXT ???
+
+	// sc_format_path("3F00", &path);
+	// if (SC_SUCCESS != sc_select_file(card, &path, NULL)) {
+	// 	/* Result ignored*/
+	// 	sc_log(card->ctx, "Warning, MF select failed");
+	// }
+
+	// sc_log(ctx, "Select Standard MF DONEEEEEE!");
+
+
+	rv = iasecc_init_ita_cie_select_aid_ias(card);
+	LOG_TEST_RET(ctx, rv, "AID Selection Error");
+
+	sc_format_path("3F00d003", &path);
+	rv = sc_select_file(card, &path, &file);
+	LOG_TEST_RET(ctx, rv, "PAN selection error");
+	sc_log(ctx, "PAN File size is %lu", file->size);
+	sc_read_binary(card, 0, rbuf, file->size, 0);
+	rbuf[file->size + 1] = 0;
+	sc_log(ctx, "PAN content %s", rbuf);
+	sc_debug_hex(ctx, SC_LOG_DEBUG_NORMAL, "Pan contents", rbuf, file->size);
+	sc_debug_hex(ctx, SC_LOG_DEBUG_NORMAL, "Pan trimmed contents", rbuf + 5, 6);
+	sc_file_free(file);
+
+	rv = iasecc_parse_ef_atr(card);
+	if (rv == SC_ERROR_FILE_NOT_FOUND)   {
+		rv = iasecc_select_mf(card, NULL);
+		LOG_TEST_RET(ctx, rv, "MF selection error");
+
+		rv = iasecc_parse_ef_atr(card);
+	}
+	LOG_TEST_RET(ctx, rv, "IASECC: ATR parse failed");
+
+	// rv = iasecc_parse_ef_atr(card);
+	// // sc_log(ctx, "rv %i", rv);
+	// // if (rv != SC_SUCCESS)   {
+	// // 	sc_log(ctx, "Select MF");
+	// // 	rv = iasecc_select_mf(card, NULL);
+	// // 	sc_log(ctx, "rv %i", rv);
+	// // 	LOG_TEST_RET(ctx, rv, "MF selection error");
+
+	// // 	sc_log(ctx, "Select MF DONEEEEEE!");
+	// // 	rv = iasecc_parse_ef_atr(card);
+	// // 	sc_log(ctx, "Parsing ATRRR, rv %i", rv);
+	// // }
+	// sc_log(ctx, "rv %i", rv);
+	// LOG_TEST_RET(ctx, rv, "Cannot read/parse EF.ATR");
+
+	// // sc_format_path("3F00A0000000308000000009816001", &path);
+	// // rv = sc_select_file(card, &path, NULL);
+
+	_sc_card_add_rsa_alg(card, 1024, flags, 0x10001);
+	_sc_card_add_rsa_alg(card, 2048, flags, 0x10001);
+
+	memset(&(card->sm_ctx), 0, sizeof(sm_context_t));
+	// card->sm_ctx.ops.get_sm_apdu
+	// card->sm_ctx.ops.get_sm_apdu = dnie_sm_get_wrapped_apdu;
+	// card->sm_ctx.ops.free_sm_apdu = dnie_sm_free_wrapped_apdu;
+	// card->sm_ctx.sm_mode = SM_MODE_NONE; // Actually SM_MODE_TRANSMIT?!
+
+	// res=cwa_create_secure_channel(card,provider,CWA_SM_OFF);
+	// LOG_TEST_RET(card->ctx, res, "Failure creating CWA secure channel.");
+
+	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
+}
+
+static int
+iasecc_read_file(struct sc_card *card,
+		sc_path_t *path, unsigned char **out, size_t *out_len)
+{
+	struct sc_context *ctx = card->ctx;
+	u8 *buf;
+	size_t buflen;
+	sc_file_t *file = NULL;
+	int rv = 0;
+
+	LOG_FUNC_CALLED(ctx);
+
+	rv = sc_select_file(card, path, &file);
+	buflen = file->size;
+	sc_file_free(file);
+
+	if (!(buf = malloc(buflen)))
+		return SC_ERROR_OUT_OF_MEMORY;
+
+	rv = sc_read_binary(card, 0, buf, buflen, 0);
+	assert(rv == (int) buflen);
+
+	if (rv < 0) {
+		sc_log(ctx, "Could not read file %s", path->value);
+		free(buf);
+
+		LOG_FUNC_RETURN(ctx, rv);
+	}
+
+	*out = buf;
+	*out_len = buflen;
+
+	LOG_FUNC_RETURN(ctx, rv);
+}
+
+static int
+iasecc_read_file_by_id(struct sc_card *card,
+		const char *file_id, unsigned char **out, size_t *out_len)
+{
+	struct sc_context *ctx = card->ctx;
+	sc_path_t path;
+	int rv = 0;
+
+	LOG_FUNC_CALLED(ctx);
+
+	sc_format_path(file_id, &path);
+	rv = iasecc_read_file(card, &path, out, out_len);
+
+	LOG_FUNC_RETURN(ctx, rv);
+}
+
+// #define C_ASN1_IASECC_SOD 76
+// static struct sc_asn1_entry c_asn1_iasecc_sod[C_ASN1_IASECC_SOD] = {
+// 	/* SC_ASN1_APP ??? */
+// 		{ "modulus",  SC_ASN1_OCTET_STRING, SC_ASN1_TAG_INTEGER, SC_ASN1_ALLOC|SC_ASN1_UNSIGNED, NULL, NULL },
+// 		{ "exponent", SC_ASN1_OCTET_STRING, SC_ASN1_TAG_INTEGER, SC_ASN1_ALLOC|SC_ASN1_UNSIGNED, NULL, NULL },
+// 		{ NULL, 0, 0, 0, NULL, NULL }
+// };
+
+// static const struct sc_asn1_entry c_asn1_dirrecord[] = {
+// 	{ "aid",   SC_ASN1_OCTET_STRING, SC_ASN1_TAG_APPLICATION | SC_ASN1_TAG_CONSTRUCTED | 16, 0, NULL, NULL },
+// 	{ "label", 0xBFA101,   SC_ASN1_APP | 16, SC_ASN1_OPTIONAL, NULL, NULL },
+// 	{ "path",  SC_ASN1_OCTET_STRING, SC_ASN1_APP | 17, SC_ASN1_OPTIONAL, NULL, NULL },
+// 	{ "ddo",   SC_ASN1_OCTET_STRING, SC_ASN1_APP | 19 | SC_ASN1_CONS, SC_ASN1_OPTIONAL, NULL, NULL },
+// 	{ NULL, 0, 0, 0, NULL, NULL }
+// };
+
+// static const struct sc_asn1_entry c_asn1_dir[] = {
+// 	{ "dirRecord", SC_ASN1_STRUCT, SC_ASN1_APP | 1 | SC_ASN1_CONS, 0, NULL, NULL },
+// 	{ NULL, 0, 0, 0, NULL, NULL }
+// };
+
+static const struct sc_asn1_entry c_asn1_key_agreement_dh[] = {
+	{ "paramG", SC_ASN1_OCTET_STRING, SC_ASN1_CTX | IASECC_KEY_AGREEMENT_TAG_G,
+	  SC_ASN1_OPTIONAL | SC_ASN1_ALLOC | SC_ASN1_UNSIGNED, NULL, NULL },
+	{ "paramP", SC_ASN1_OCTET_STRING, SC_ASN1_CTX | IASECC_KEY_AGREEMENT_TAG_P,
+	  SC_ASN1_OPTIONAL | SC_ASN1_ALLOC | SC_ASN1_UNSIGNED, NULL, NULL },
+	{ "paramQ", SC_ASN1_OCTET_STRING, SC_ASN1_CTX | IASECC_KEY_AGREEMENT_TAG_Q,
+	  SC_ASN1_OPTIONAL | SC_ASN1_ALLOC | SC_ASN1_UNSIGNED, NULL, NULL },
+	{ NULL, 0, 0, 0, NULL, NULL }
+};
+
+static int
+parse_key_agreement(sc_card_t *card, u8 *buf, size_t buflen)
+{
+	struct sc_context *ctx = card->ctx;
+	struct sc_asn1_entry asn1_key_agreement_dh[4];
+	struct iasecc_private_data *private_data = (struct iasecc_private_data *)card->drv_data;
+	// u8 g[128], p[128], q[128];
+	// u8 *g, *p, *q;
+	const u8 *tag;
+	// size_t g_len, p_len, q_len;
+	size_t taglen = 0;
+	int r;
+
+	LOG_FUNC_CALLED(ctx);
+	sc_asn1_print_tags(buf, buflen);
+
+	tag = sc_asn1_find_tag(ctx, buf, buflen,
+		SC_ASN1_TAG_APPLICATION | SC_ASN1_TAG_CONSTRUCTED | 16, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing DOUP Tag");
+
+	tag = sc_asn1_find_tag(ctx, tag, taglen, 0xBFA101, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing DOUP Tag");
+
+	tag = sc_asn1_find_tag(ctx, tag, taglen,
+		SC_ASN1_TAG_CONTEXT | SC_ASN1_TAG_CONSTRUCTED | 3, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing DOUP Tag");
+
+	sc_copy_asn1_entry(c_asn1_key_agreement_dh, asn1_key_agreement_dh);
+	sc_format_asn1_entry(asn1_key_agreement_dh + 0, &private_data->key_exchange.g,
+	                     &private_data->key_exchange.g_len, 0);
+	sc_format_asn1_entry(asn1_key_agreement_dh + 1, &private_data->key_exchange.p,
+	                     &private_data->key_exchange.p_len, 0);
+	sc_format_asn1_entry(asn1_key_agreement_dh + 2, &private_data->key_exchange.q,
+	                     &private_data->key_exchange.q_len, 0);
+
+	r = sc_asn1_decode(ctx, asn1_key_agreement_dh, tag, taglen, NULL, NULL);
+	if (r == SC_ERROR_ASN1_END_OF_CONTENTS)
+		LOG_FUNC_RETURN(ctx, r);
+	LOG_TEST_RET(ctx, r, "DH DOUP parsing failed");
+
+	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
+}
+
+static int
+iasecc_sdo_get_tagged_data(struct sc_card *card, int sdo_tag, struct iasecc_sdo *sdo);
+
+static int
+iasecc_post_init_ita_cie(struct sc_card *card)
+{
+	struct sc_context *ctx = card->ctx;
+	struct iasecc_private_data *private_data = (struct iasecc_private_data *)card->drv_data;
+	struct sm_info *sm_info = &card->sm_ctx.info;
+	struct sm_dh_session *dh_session = &sm_info->session.dh;
+	unsigned char *buf = NULL;
+	size_t buflen = 0;
+	int rv = 0;
+
+	// #define C_ASN1_RSA_PUB_COEFFICIENTS_SIZE 3
+	// static struct sc_asn1_entry c_asn1_rsa_pub_coefficients[C_ASN1_RSA_PUB_COEFFICIENTS_SIZE] = {
+	// 		{ "modulus",  SC_ASN1_OCTET_STRING, SC_ASN1_TAG_INTEGER, SC_ASN1_ALLOC, NULL, NULL },
+	// 		{ "exponent", SC_ASN1_OCTET_STRING, SC_ASN1_TAG_INTEGER, SC_ASN1_ALLOC, NULL, NULL },
+	// 		{ NULL, 0, 0, 0, NULL, NULL }
+	// };
+
+	LOG_FUNC_CALLED(ctx);
+
+	if (!(private_data->cie_data = malloc(sizeof (struct iasecc_ita_cie))))
+		return SC_ERROR_OUT_OF_MEMORY;
+
+	struct iasecc_ita_cie *cie_data = private_data->cie_data;
+
+	rv = iasecc_init_ita_cie_select_cie_aid(card);
+	LOG_TEST_RET(ctx, rv, "CIE AID selection error");
+
+	/* Try to get this via iasecc_sdo_get_data ??? */
+	iasecc_read_file_by_id(card, "3F001004", &buf, &buflen);
+	LOG_TEST_RET(ctx, rv, "Could not select device Public key");
+
+	sc_asn1_print_tags(buf, buflen);
+	// sc_asn1_find_tag(ctx, tag, taglen)
+
+	sc_pkcs15_decode_pubkey_rsa(ctx, &cie_data->privacy_auth_key, buf, buflen);
+	LOG_TEST_RET(ctx, rv, "Privacy public key sequence");
+	free(buf);
+
+	// if (!card->sm_ctx.module.ops.initialize) {
+	// 	sc_log(ctx, "No SM module loaded");
+	// 	return SC_ERROR_WRONG_CARD;
+	// }
+
+	// sc_enum_apps(card);
+
+	// sc_security_env_t env;
+	// env.operation = SC_SEC_OPERATION_AUTHENTICATE;
+	// sc_set_security_env(card, &env, 0);
+
+	/* Setting the cryptographic context */
+	unsigned char mse_set[] = {
+		IASECC_CRT_TAG_ALGO, 0x01, 0x02, 0x84, 0x01, 0x83,
+	};
+
+	struct sc_apdu apdu;
+	sc_format_apdu(card, &apdu, SC_APDU_CASE_3_SHORT, 0x22, 0x41, IASECC_CRT_TAG_AT);
+	apdu.data = mse_set;
+	apdu.datalen = sizeof(mse_set);
+	apdu.lc = sizeof(mse_set);
+
+	rv = sc_transmit_apdu(card, &apdu);
+	LOG_TEST_RET(ctx, rv, "APDU transmit failed");
+	rv = sc_check_sw(card, apdu.sw1, apdu.sw2);
+	LOG_TEST_RET(ctx, rv, "MSE restore error");
+
+	// XXX: Check bounds!
+	private_data->security_env.operation = SC_SEC_OPERATION_AUTHENTICATE;
+	/* Maybe use random number?! */
+
+	buf = malloc(sizeof(cie_data->card_seed));
+	rv = sc_compute_signature(card, card->serialnr.value, 6, buf, sizeof(cie_data->card_seed));
+	private_data->security_env.operation = 0;
+	sc_log(ctx, "Signature computed, rv: %d\n",rv);
+	LOG_TEST_GOTO_ERR(ctx, rv, "Compute signature");
+	if (rv != sizeof(cie_data->card_seed)) {
+		sc_log(ctx, "Unexpected signature length: %d", rv);
+		goto err;
+	}
+
+	SHA512(buf, rv, cie_data->sha_512_digest);
+	sc_debug_hex(ctx, SC_LOG_DEBUG_NORMAL, "SHA512", cie_data->sha_512_digest,
+		SHA512_DIGEST_LENGTH);
+	memcpy(&cie_data->enc_key, cie_data->sha_512_digest, 32);
+	memcpy(&cie_data->enc_iv, cie_data->sha_512_digest + 32, 16);
+	free(buf);
+
+	// SHA512_CTX sha512_ctx;
+	// SHA512_Init(&sha512_ctx);
+	// const size_t digest_length = 64;
+	// SHA512()
+	// SHA512_Update(&sha512_ctx, buf, rv);
+	// SHA512_Final(rbuf, &sha512_ctx);
+
+	// ReadIdServizi
+
+	iasecc_read_file_by_id(card, "3F001001", &buf, &buflen);
+	LOG_TEST_RET(ctx, rv, "Could not select IdServizi");
+	free(buf);
+
+	// ===================
+
+	iasecc_read_file_by_id(card, "3F001006", &cie_data->sod.value, &cie_data->sod.size);
+	sc_asn1_print_tags(cie_data->sod.value, cie_data->sod.size);
+	LOG_TEST_RET(ctx, rv, "Could not select SOD");
+
+	size_t taglen = 0;
+	const u8 *tag;
+	// SC_ASN1_TAG_APPLICATION | SC_ASN1_TAG_SEQUENCE | SC_ASN1_TAG_CONSTRUCTED | SC_ASN1_TAG_OBJECT_DESCRIPTOR
+	tag = sc_asn1_find_tag(ctx, cie_data->sod.value, cie_data->sod.size,
+		SC_ASN1_TAG_APPLICATION | SC_ASN1_TAG_CONSTRUCTED | 23 /* app: 23 */, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing SOD tag");
+	sc_log(ctx, "FOUND Tag %p len %lu\n",tag, taglen);
+	// sc_asn1_print_tags(tag, taglen);
+
+	tag = sc_asn1_find_tag(ctx, tag, taglen, SC_ASN1_TAG_SEQUENCE | SC_ASN1_TAG_CONSTRUCTED, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing SOD tag");
+	sc_log(ctx, "FOUND Tag %p len %lu\n",tag, taglen);
+	// sc_asn1_print_tags(tag, taglen);
+
+	tag = sc_asn1_find_tag(ctx, tag, taglen, SC_ASN1_TAG_CONTEXT | SC_ASN1_TAG_CONSTRUCTED, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing SOD tag");
+	sc_log(ctx, "FOUND Tag %p len %lu\n",tag, taglen);
+	// sc_asn1_print_tags(tag, taglen);
+
+	tag = sc_asn1_find_tag(ctx, tag, taglen, SC_ASN1_TAG_SEQUENCE | SC_ASN1_TAG_CONSTRUCTED, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing SOD tag");
+	sc_log(ctx, "FOUND Tag %p len %lu\n",tag, taglen);
+	// sc_asn1_print_tags(tag, taglen);
+
+	tag = sc_asn1_find_tag(ctx, tag, taglen, SC_ASN1_TAG_SET | SC_ASN1_TAG_CONSTRUCTED, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing SOD tag");
+	sc_log(ctx, "FOUND Tag %p len %lu\n",tag, taglen);
+	// sc_asn1_print_tags(tag, taglen);
+
+	tag = sc_asn1_find_tag(ctx, tag, taglen, SC_ASN1_TAG_SEQUENCE | SC_ASN1_TAG_CONSTRUCTED, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing SOD tag");
+	sc_log(ctx, "FOUND Tag %p len %lu\n",tag, taglen);
+	// sc_asn1_print_tags(tag, taglen);
+
+	tag = sc_asn1_find_tag(ctx, tag, taglen, SC_ASN1_TAG_OBJECT, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing SOD tag");
+	sc_log(ctx, "FOUND Tag %p len %lu\n",tag, taglen);
+	// sc_asn1_print_tags(tag, taglen);
+
+	struct sc_object_id key_type = {0};
+	rv = sc_asn1_decode_object_id(tag, taglen, &key_type);
+	LOG_TEST_RET(ctx, rv, "Missing SOD tag");
+	// sc_debug_hex(ctx, SC_LOG_DEBUG_NORMAL, "KEY TYPE VALUE", (u8*)key_type.value, 16);
+
+	cie_data->sod.digest_algorithm = OBJ_txt2nid(sc_dump_oid(&key_type));
+	if (cie_data->sod.digest_algorithm != NID_sha256 &&
+	    cie_data->sod.digest_algorithm != NID_sha512) {
+		sc_log(ctx, "Unexpected SOD digest algorithm: %s",
+		       cie_data->sod.digest_algorithm != NID_undef ?
+					 OBJ_nid2ln(cie_data->sod.digest_algorithm) : sc_dump_oid(&key_type));
+		return SC_ERROR_WRONG_CARD;
+	}
+	sc_log(ctx, "SOD Digest algorithm is %s", OBJ_nid2ln(cie_data->sod.digest_algorithm));
+
+	// ===================
+
+	iasecc_read_file_by_id(card, "3F001005", &buf, &buflen);
+	LOG_TEST_RET(ctx, rv, "Could not select Servizi PublicKey");
+
+	sc_pkcs15_decode_pubkey_rsa(ctx, &cie_data->servizi_pubkey, buf, buflen);
+	LOG_TEST_RET(ctx, rv, "Servizi public key sequence");
+	free(buf);
+
+	// ===================
+
+	rv = iasecc_init_ita_cie_select_aid_ias(card);
+	LOG_TEST_RET(ctx, rv, "IAS Selection");
+
+	// ===================
+
+	/* This is a Standard path! */
+	iasecc_read_file_by_id(card, "3F00D004", &buf, &buflen);
+	LOG_TEST_RET(ctx, rv, "Could not select DH");
+	sc_asn1_print_tags(buf, buflen);
+	free(buf);
+
+	/* ========== */
+
+	rv = iasecc_init_ita_cie_select_aid_ias(card); /* Remove duplicated?! */
+	LOG_TEST_RET(ctx, rv, "IAS Selection");
+
+	rv = iasecc_init_ita_cie_select_cie_aid(card);
+	LOG_TEST_RET(ctx, rv, "CIE Selection");
+
+	// InitDHParam() ... 
+
+	// struct iasecc_se_info se;
+	// memset(&se, 0, sizeof(struct iasecc_se_info));
+	// rv = iasecc_se_get_info(card, &se);
+	// LOG_TEST_RET(ctx, rv, "DH Security info???");
+
+	// Key agreement DH
+	buf = malloc(1024);
+	sc_format_apdu(card, &apdu, SC_APDU_CASE_4_SHORT, 0xCB, 0x3F, 0xFF);
+	const u8 req_dh_data[] = { 0x4d, 0x08, 0x70, 0x06, 0xBF, 0xA1, 0x01, 0x02, 0xA3, 0x80 };
+	apdu.data = req_dh_data;
+	apdu.datalen = sizeof(req_dh_data);
+	apdu.lc = apdu.datalen;
+	apdu.resp = buf;
+	apdu.resplen = 1024;
+	apdu.le = 0x100;
+
+	// Can be generated the same via:
+	// struct iasecc_sdo sdo = {0};
+	// sdo.sdo_ref = 0x01;
+	// sdo.sdo_class = 0x21; /* Domain Parameters DH */
+	// rv = iasecc_sdo_get_tagged_data(card, 0xA3, &sdo);
+
+	memset(&private_data->key_exchange, 0, sizeof(private_data->key_exchange));
+
+	rv = sc_transmit_apdu(card, &apdu);
+	LOG_TEST_GOTO_ERR(ctx, rv, "APDU transmit failed");
+	rv = sc_check_sw(card, apdu.sw1, apdu.sw2);
+
+	if (rv == SC_SUCCESS) {
+		rv = parse_key_agreement(card, buf, buflen);
+		LOG_TEST_RET(ctx, rv, "Parsing ECDH DOUP");
+	} else {
+		u8 req_dh_partial[] = { 0x4D, 0x0A, 0x70, 0x08, 0xBF, 0xA1, 0x01, 0x04, 0xA3, 0x02, 0x00, 0x00 };
+		apdu.data = req_dh_partial;
+		apdu.datalen = sizeof(req_dh_partial);
+		apdu.lc = apdu.datalen;
+
+		// req_dh_partial[10] = SC_ASN1_TAG_CONTEXT | IASECC_KEY_AGREEMENT_TAG_G;
+		req_dh_partial[10] = IASECC_SDO_ECDH_TAG_G;
+		rv = sc_transmit_apdu(card, &apdu);
+		LOG_TEST_GOTO_ERR(ctx, rv, "APDU transmit failed");
+		rv = sc_check_sw(card, apdu.sw1, apdu.sw2);
+		LOG_TEST_GOTO_ERR(ctx, rv, "ECDH DOUP parameter g");
+		rv = parse_key_agreement(card, buf, buflen);
+		LOG_TEST_GOTO_ERR(ctx, rv, "DOUP contents");
+
+		// req_dh_partial[10] = SC_ASN1_TAG_CONTEXT | IASECC_KEY_AGREEMENT_TAG_P;
+		req_dh_partial[10] = IASECC_SDO_ECDH_TAG_P;
+		rv = sc_transmit_apdu(card, &apdu);
+		LOG_TEST_GOTO_ERR(ctx, rv, "APDU transmit failed");
+		rv = sc_check_sw(card, apdu.sw1, apdu.sw2);
+		LOG_TEST_GOTO_ERR(ctx, rv, "ECDH DOUP parameter p");
+		rv = parse_key_agreement(card, buf, buflen);
+		LOG_TEST_GOTO_ERR(ctx, rv, "DOUP contents");
+
+		// req_dh_partial[10] = SC_ASN1_TAG_CONTEXT | IASECC_KEY_AGREEMENT_TAG_Q;
+		req_dh_partial[10] = IASECC_SDO_ECDH_TAG_Q;
+		rv = sc_transmit_apdu(card, &apdu);
+		LOG_TEST_GOTO_ERR(ctx, rv, "APDU transmit failed");
+		rv = sc_check_sw(card, apdu.sw1, apdu.sw2);
+		LOG_TEST_GOTO_ERR(ctx, rv, "ECDH DOUP parameter q");
+		rv = parse_key_agreement(card, buf, buflen);
+		LOG_TEST_GOTO_ERR(ctx, rv, "DOUP contents");
+	}
+
+	if (!private_data->key_exchange.g_len ||
+	    !private_data->key_exchange.p_len ||
+			!private_data->key_exchange.q_len)
+			LOG_TEST_GOTO_ERR(ctx, rv, "DOUP keys");
+
+	free(buf);
+
+
+	struct iasecc_sdo sdo = {0};
+	const u8 CIE_KEY_ExtAuth_ID = 0x84;
+	sdo.sdo_ref = CIE_KEY_ExtAuth_ID & 0x7f;
+	sdo.sdo_class = 0x20; /* Asymmetric keys public */
+	rv = iasecc_sdo_get_tagged_data(card, 0x7F49, &sdo);
+	// sc_format_apdu(card, &apdu, SC_APDU_CASE_4_SHORT, 0xCB, 0x3F, 0xFF);
+	// const u8 req_pin_doup_data[] = {
+	// 	0x4d, 0x09, 0x70, 0x07, 0xBF, 0xA0, CIE_KEY_ExtAuth_ID & 0x7f, 0x03, 0x7F, 0x49, 0x80
+	//  };
+	// apdu.data = req_pin_doup_data;
+	// apdu.datalen = sizeof(req_pin_doup_data);
+	// apdu.lc = apdu.datalen;
+	// apdu.resp = buf;
+	// apdu.resplen = 1024;
+	// apdu.le = 0x100;
+
+	// rv = sc_transmit_apdu(card, &apdu);
+	// LOG_TEST_GOTO_ERR(ctx, rv, "APDU transmit failed");
+	// rv = sc_check_sw(card, apdu.sw1, apdu.sw2);
+	LOG_TEST_GOTO_ERR(ctx, rv, "PIN DOUP Info");
+	// sc_log(ctx, "PIN APDU info");
+	// sc_asn1_print_tags(buf, apdu.resplen);
+
+	/* DHKeyExchange() */
+
+	DH* dh = DH_new();
+	// card->sm_ctx.info.session.dh. ... use those
+	BIGNUM *g = BN_bin2bn(private_data->key_exchange.g, private_data->key_exchange.g_len, NULL);
+	BIGNUM *p = BN_bin2bn(private_data->key_exchange.p, private_data->key_exchange.p_len, NULL);
+	BIGNUM *q = BN_bin2bn(private_data->key_exchange.q, private_data->key_exchange.q_len, NULL);
+
+	// DH_set_length() // XXX: Need to set constraints?
+	// DH_set0_key(dh, BIGNUM *pub_key, BIGNUM *priv_key) /* Use values from driver?! */
+	if (DH_set0_pqg(dh, p, q, g) == 0) {
+		rv = SC_ERROR_SECURITY_STATUS_NOT_SATISFIED;
+		goto err;
+	}
+	if (DH_generate_key(dh) == 0) {
+		rv = SC_ERROR_SECURITY_STATUS_NOT_SATISFIED;
+		goto err;
+	}
+	const BIGNUM *dh_pubkey = DH_get0_pub_key(dh);
+	if (!dh_pubkey) {
+		rv = SC_ERROR_SECURITY_STATUS_NOT_SATISFIED;
+		goto err;
+	}
+	size_t dh_pubkey_bytes_len = BN_num_bytes(dh_pubkey);
+	u8 *dh_pubkey_bytes = malloc(dh_pubkey_bytes_len);
+	if (BN_bn2bin(dh_pubkey, dh_pubkey_bytes) != (int) dh_pubkey_bytes_len) {
+		rv = SC_ERROR_SECURITY_STATUS_NOT_SATISFIED;
+		goto err;
+	}
+
+	buflen = 2024;
+	buf = malloc(buflen);
+	u8 *asn1_data = buf;
+	size_t asn1_datalen = 0;
+	memset(buf, 0, buflen);
+	u8 algo = 0x9b; /* PKDH_SHA256, XXX: ADD define! */
+
+	rv = sc_asn1_put_tag(0x80, &algo, 1, buf, buflen, &buf);
+	LOG_TEST_GOTO_ERR(ctx, rv, "DH Key Exchange");
+
+	const u8 keyId = 0x81;
+	rv = sc_asn1_put_tag(0x83, &keyId, 1, buf, buflen, &buf);
+	LOG_TEST_GOTO_ERR(ctx, rv, "DH Key Exchange");
+
+	// sc_log(ctx, "pubkey length is %u\n", BN_num_bytes(dh_pubkey));
+	// sc_log_hex(ctx, 0, dh_pubkey_bytes, BN_num_bytes(dh_pubkey));
+
+	rv = sc_asn1_put_tag(0x91, dh_pubkey_bytes, BN_num_bytes(dh_pubkey), buf, buflen, &buf);
+	LOG_TEST_GOTO_ERR(ctx, rv, "DH Key Exchange");
+
+	asn1_datalen = buf - asn1_data;
+	buf = asn1_data;
+	sc_log(ctx, "DH Key... of size %lu", asn1_datalen);
+	sc_log_hex(ctx, 0, asn1_data, asn1_datalen);
+	sc_asn1_print_tags(asn1_data, asn1_datalen);
+	// sc_asn1_print_tags(pp, asn1_datalen);
+
+	memset(&apdu, 0, sizeof(sc_apdu_t));
+	sc_format_apdu(card, &apdu, SC_APDU_CASE_3_SHORT, 0x22, 0x41, IASECC_CRT_TAG_KAT);
+	apdu.flags = SC_APDU_FLAGS_CHAINING;
+	apdu.data = asn1_data;
+	apdu.datalen = asn1_datalen;
+	apdu.lc = asn1_datalen;
+	rv = sc_transmit_apdu(card, &apdu);
+	LOG_TEST_GOTO_ERR(ctx, rv, "APDU transmit failed");
+	rv = sc_check_sw(card, apdu.sw1, apdu.sw2);
+	LOG_TEST_GOTO_ERR(ctx, rv, "DH Key Exchange");
+
+	sc_format_apdu(card, &apdu, SC_APDU_CASE_4_SHORT, 0xCB, 0x3F, 0xFF);
+	const u8 req_kicc_data[] = { 0x4d, 0x04, 0xa6, 0x02, 0x91, 0x00 };
+	apdu.data = req_kicc_data;
+	apdu.datalen = sizeof(req_kicc_data);
+	apdu.lc = apdu.datalen;
+	apdu.resp = buf;
+	apdu.resplen = 1024;
+	apdu.le = 0x100;
+	rv = sc_transmit_apdu(card, &apdu);
+	LOG_TEST_GOTO_ERR(ctx, rv, "APDU transmit failed");
+	rv = sc_check_sw(card, apdu.sw1, apdu.sw2);
+	LOG_TEST_GOTO_ERR(ctx, rv, "DH Key Exchange");
+
+	sc_asn1_print_tags(apdu.resp, apdu.resplen);
+	// rv = iasecc_sdo_parse(card, apdu.resp, apdu.resplen, &sdo);
+	// LOG_TEST_RET(ctx, rv, "cannot parse SDO data");
+
+	tag = sc_asn1_find_tag(ctx, buf, buflen,
+		SC_ASN1_TAG_CONTEXT | SC_ASN1_TAG_CONSTRUCTED | 6, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing DOUP Tag");
+
+	tag = sc_asn1_find_tag(ctx, tag, taglen, 0x91, &taglen);
+	if (!tag)
+		LOG_TEST_RET(ctx, SC_ERROR_WRONG_CARD, "Missing DOUP Tag");
+
+	dh_session->icc_p.value = malloc(taglen);
+	memcpy(dh_session->icc_p.value, tag, taglen);
+	dh_session->icc_p.len = taglen;
+	// private_data->key_exchange.icc_pubkey = malloc(taglen);
+	// memcpy(private_data->key_exchange.icc_pubkey, tag, taglen);
+	// private_data->key_exchange.icc_pubkey_len = taglen;
+
+	dh_session->shared_secret.value = malloc(DH_size(dh));
+	dh_session->shared_secret.len = DH_size(dh);
+	BIGNUM *icc_pubkey = BN_bin2bn(tag, taglen, NULL);
+	if (DH_compute_key(dh_session->shared_secret.value, icc_pubkey, dh) == -1) {
+		rv = SC_ERROR_SECURITY_STATUS_NOT_SATISFIED;
+		goto err;
+	}
+	BN_free(icc_pubkey);
+
+	rv = iasecc_sm_initialize_dh_rsa(card);
+	LOG_TEST_RET(ctx, rv, "DH RSA initialization");
+
+	// struct sc_remote_data rdata;
+	// sc_remote_data_init(&rdata);
+	// sc_log(ctx, "Initialize, card->sm_ctx.module.ops.initialize %p",
+	// 	card->sm_ctx.module.ops.initialize);
+	// rv = card->sm_ctx.module.ops.initialize(ctx, &card->sm_ctx.info, &rdata);
+	// LOG_TEST_GOTO_ERR(ctx, rv, "No SM module loaded");
+
+	// char * number_str = BN_bn2hex(p);
+  // printf("p: %s\n", number_str);
+  // OPENSSL_free(number_str);
+	// number_str = BN_bn2hex(q);
+  // printf("q: %s\n", number_str);
+  // OPENSSL_free(number_str);
+	// number_str = BN_bn2hex(g);
+  // printf("g: %s\n", number_str);
+  // OPENSSL_free(number_str);
+  // BN_free(p);
+	// BN_free(q);
+	// BN_free(g);
+
+	/* ================ */
+
+	// DAPP()..
+
+	/*  */
+
+	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
+
+err:
+	// free(dh_pubkey_bytes);
+	// DH_free(dh);
+	free(buf);
+	free(cie_data);
+	LOG_FUNC_RETURN(ctx, rv);
+}
+
 
 static int
 iasecc_init(struct sc_card *card)
@@ -680,6 +1441,10 @@ iasecc_init(struct sc_card *card)
 		rv = iasecc_init_amos_or_sagem(card);
 	else if (iasecc_is_cpx(card))
 		rv = iasecc_init_cpx(card);
+#ifdef ENABLE_SM
+	else if (card->type == SC_CARD_TYPE_IASECC_ITA_CIE_V3)
+		rv = iasecc_init_ita_cie(card);
+#endif
 	else {
 		LOG_TEST_GOTO_ERR(ctx, SC_ERROR_INVALID_CARD, "");
 	}
@@ -709,6 +1474,11 @@ iasecc_init(struct sc_card *card)
 
 	if (!rv && card->ef_atr && card->ef_atr->aid.len)   {
 		sc_log(ctx, "EF.ATR(aid:'%s')", sc_dump_hex(card->ef_atr->aid.value, card->ef_atr->aid.len));
+	}
+
+	if (card->type == SC_CARD_TYPE_IASECC_ITA_CIE_V3) {
+		rv = iasecc_post_init_ita_cie(card);
+		LOG_TEST_GOTO_ERR(ctx, rv, "Post initialization failed");
 	}
 
 err:
@@ -843,7 +1613,7 @@ _iasecc_sm_update_binary(struct sc_card *card, unsigned int offs,
 
 	LOG_FUNC_CALLED(ctx);
 	sc_log(ctx,
-	       "iasecc_sm_read_binary() card:%p offs:%i count:%"SC_FORMAT_LEN_SIZE_T"u ",
+	       "iasecc_sm_update_binary() card:%p offs:%i count:%"SC_FORMAT_LEN_SIZE_T"u ",
 	       card, offs, count);
 	sc_print_cache(card);
 
@@ -1005,7 +1775,8 @@ iasecc_select_file(struct sc_card *card, const struct sc_path *path,
 				&& card->type != SC_CARD_TYPE_IASECC_AMOS
 				&& card->type != SC_CARD_TYPE_IASECC_MI
 				&& card->type != SC_CARD_TYPE_IASECC_MI2
-				&& !iasecc_is_cpx(card)) {
+				&& !iasecc_is_cpx(card)
+				&& card->type != SC_CARD_TYPE_IASECC_ITA_CIE_V3) {
 			rv = SC_ERROR_NOT_SUPPORTED;
 			LOG_TEST_GOTO_ERR(ctx, rv, "Unsupported card");
 		}
@@ -1019,6 +1790,7 @@ iasecc_select_file(struct sc_card *card, const struct sc_path *path,
 			    card->type == SC_CARD_TYPE_IASECC_MI ||
 			    card->type == SC_CARD_TYPE_IASECC_MI2 ||
 			    card->type == SC_CARD_TYPE_IASECC_GEMALTO ||
+			    card->type == SC_CARD_TYPE_IASECC_ITA_CIE_V3 ||
 			    iasecc_is_cpx(card)
 			    )   {
 				apdu.p2 = 0x04;
@@ -1031,6 +1803,7 @@ iasecc_select_file(struct sc_card *card, const struct sc_path *path,
 			    card->type == SC_CARD_TYPE_IASECC_MI ||
 			    card->type == SC_CARD_TYPE_IASECC_MI2 ||
 			    card->type == SC_CARD_TYPE_IASECC_GEMALTO ||
+			    card->type == SC_CARD_TYPE_IASECC_ITA_CIE_V3 ||
 			    iasecc_is_cpx(card)) {
 				apdu.p2 = 0x04;
 			}
@@ -1046,6 +1819,7 @@ iasecc_select_file(struct sc_card *card, const struct sc_path *path,
 			    card->type == SC_CARD_TYPE_IASECC_MI2 ||
 			    card->type == SC_CARD_TYPE_IASECC_OBERTHUR ||
 			    card->type == SC_CARD_TYPE_IASECC_GEMALTO ||
+			    card->type == SC_CARD_TYPE_IASECC_ITA_CIE_V3 ||
 			    iasecc_is_cpx(card)) {
 				apdu.p2 = 0x04;
 			}
@@ -1200,6 +1974,7 @@ iasecc_process_fci(struct sc_card *card, struct sc_file *file,
 	int rv;
 	const unsigned char *acls = NULL, *tag = NULL;
 	unsigned char mask;
+	unsigned int acls_tag = IASECC_DOCP_TAG_ACLS_CONTACT;
 	unsigned char ops_DF[7] = {
 		SC_AC_OP_DELETE, 0xFF, SC_AC_OP_ACTIVATE, SC_AC_OP_DEACTIVATE, 0xFF, SC_AC_OP_CREATE, 0xFF
 	};
@@ -1234,16 +2009,22 @@ iasecc_process_fci(struct sc_card *card, struct sc_file *file,
 */
 
 	sc_log(ctx, "iasecc_process_fci() type %i; let's parse file ACLs", file->type);
+	sc_asn1_print_tags(buf, buflen);
 	tag = sc_asn1_find_tag(ctx, buf, buflen, IASECC_DOCP_TAG_ACLS, &taglen);
+
+	if (card->type == SC_CARD_TYPE_IASECC_ITA_CIE_V3)
+		acls_tag = IASECC_DOCP_TAG_ACLS_CONTACTLESS;
+
 	if (tag)
-		acls = sc_asn1_find_tag(ctx, tag, taglen, IASECC_DOCP_TAG_ACLS_CONTACT, &taglen);
+		acls = sc_asn1_find_tag(ctx, tag, taglen, acls_tag, &taglen);
 	else
-		acls = sc_asn1_find_tag(ctx, buf, buflen, IASECC_DOCP_TAG_ACLS_CONTACT, &taglen);
+		acls = sc_asn1_find_tag(ctx, buf, buflen, acls_tag, &taglen);
 
 	if (!acls)   {
 		sc_log(ctx,
 		       "ACLs not found in data(%"SC_FORMAT_LEN_SIZE_T"u) %s",
 		       buflen, sc_dump_hex(buf, buflen));
+		// return SC_SUCCESS;
 		LOG_TEST_RET(ctx, SC_ERROR_OBJECT_NOT_FOUND, "ACLs tag missing");
 	}
 
@@ -1359,7 +2140,7 @@ iasecc_fcp_encode(struct sc_card *card, struct sc_file *file, unsigned char *out
 
 	/* TODO: Encode contactless ACLs and life cycle status for all IAS/ECC cards */
 	if (card->type == SC_CARD_TYPE_IASECC_SAGEM ||
-			card->type == SC_CARD_TYPE_IASECC_AMOS )  {
+			card->type == SC_CARD_TYPE_IASECC_AMOS)  {
 		unsigned char status = 0;
 
 		buf[offs++] = IASECC_FCP_TAG_ACLS;
@@ -1393,7 +2174,8 @@ iasecc_fcp_encode(struct sc_card *card, struct sc_file *file, unsigned char *out
 		buf[offs++] = IASECC_FCP_TAG_ACLS;
 		buf[offs++] = 2 + 1 + nn_smb;
 
-		buf[offs++] = IASECC_FCP_TAG_ACLS_CONTACT;
+		buf[offs++] = card->type == SC_CARD_TYPE_IASECC_ITA_CIE_V3 ?
+			IASECC_FCP_TAG_ACLS_CONTACTLESS : IASECC_FCP_TAG_ACLS_CONTACT;
 		buf[offs++] = nn_smb + 1;
 		buf[offs++] = amb;
 		memcpy(buf + offs, smbs, nn_smb);
@@ -1528,6 +2310,7 @@ iasecc_finish(struct sc_card *card)
 		se_info = next;
 	}
 
+	free(private_data->cie_data);
 	free(card->drv_data);
 	card->drv_data = NULL;
 
@@ -2938,6 +3721,9 @@ iasecc_sdo_get_tagged_data(struct sc_card *card, int sdo_tag, struct iasecc_sdo 
 	LOG_TEST_RET(ctx, rv, "APDU transmit failed");
 	rv = sc_check_sw(card, apdu.sw1, apdu.sw2);
 	LOG_TEST_RET(ctx, rv, "SDO get data error");
+
+	sc_log(ctx, "TAgged data %02x\n", sdo_tag);
+	sc_asn1_print_tags(apdu.resp, apdu.resplen);
 
 	rv = iasecc_sdo_parse(card, apdu.resp, apdu.resplen, sdo);
 	LOG_TEST_RET(ctx, rv, "cannot parse SDO data");

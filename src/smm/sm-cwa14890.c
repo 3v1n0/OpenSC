@@ -182,6 +182,8 @@ sm_cwa_init_session_keys(struct sc_context *ctx, struct sm_cwa_session *session_
 
 	memset(xored, 0, sizeof(xored));
 
+	/* does the part of DHKeyExchange */
+
 	for (ii=0; ii<32; ii++)
 		xored[ii] = session_data->ifd.k[ii] ^ session_data->icc.k[ii];
 

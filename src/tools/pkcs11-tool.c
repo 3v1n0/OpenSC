@@ -1603,6 +1603,14 @@ static void show_token(CK_SLOT_ID slot)
 	CK_TOKEN_INFO	info;
 	CK_RV rv;
 
+	// CK_SESSION_HANDLE session = CK_INVALID_HANDLE;
+	// rv = p11->C_OpenSession(slot, CKF_SERIAL_SESSION| CKF_RW_SESSION,
+	// 	NULL, NULL, &session);
+	// if (rv != CKR_OK)
+	// 	p11_fatal("C_OpenSession", rv);
+
+	// login(session, CKU_USER);
+
 	rv = p11->C_GetTokenInfo(slot, &info);
 	if (rv == CKR_TOKEN_NOT_RECOGNIZED) {
 		printf("  (token not recognized)\n");

@@ -28,6 +28,7 @@ dist_pkgdata_DATA = \
 	iasecc.profile \
 	ias_adele_admin1.profile ias_adele_admin2.profile ias_adele_common.profile \
 	iasecc_generic_pki.profile iasecc_admin_eid.profile iasecc_generic_oberthur.profile \
+	iasecc_ita_cie.profile \
 	openpgp.profile sc-hsm.profile \
 	isoApplet.profile gids.profile
 

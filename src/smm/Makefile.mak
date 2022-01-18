@@ -2,7 +2,7 @@ TOPDIR = ..\..
 
 TARGET = smm-local.dll
 
-OBJECTS = smm-local.obj sm-global-platform.obj sm-cwa14890.obj sm-card-iasecc.obj sm-card-authentic.obj
+OBJECTS = smm-local.obj sm-global-platform.obj sm-cwa14890.obj sm-card-iasecc.obj sm-card-authentic.obj sm-dh-rsa.obj
 LIBS = $(TOPDIR)\src\sm\libsm.lib \
 	   $(TOPDIR)\src\libopensc\opensc_a.lib \
 	   $(TOPDIR)\src\pkcs15init\pkcs15init.lib \

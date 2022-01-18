@@ -15,7 +15,7 @@ lib_LTLIBRARIES = libsmm-local.la
 endif
 
 libsmm_local_la_SOURCES = smm-local.c sm-module.h \
-	sm-global-platform.c sm-cwa14890.c \
+	sm-global-platform.c sm-cwa14890.c sm-dh-rsa.c \
 	sm-card-authentic.c sm-card-iasecc.c \
 	smm-local.exports
 libsmm_local_la_LIBADD = $(OPTIONAL_OPENSSL_LIBS) ../libopensc/libopensc.la

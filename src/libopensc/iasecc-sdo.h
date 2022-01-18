@@ -85,6 +85,11 @@
 #define IASECC_SDO_KEYSET_TAG_ENC		0x91
 #define IASECC_SDO_KEYSET_TAG_COMPULSORY	0x80
 
+#define IASECC_SDO_ECDH_TAG			0xA3
+#define IASECC_SDO_ECDH_TAG_G		0x97
+#define IASECC_SDO_ECDH_TAG_P		0x98
+#define IASECC_SDO_ECDH_TAG_Q		0x99
+
 #define IASECC_SCB_METHOD_NEED_ALL	0x80
 #define IASECC_SCB_METHOD_MASK		0x70
 #define IASECC_SCB_METHOD_MASK_REF	0x0F
@@ -123,6 +128,8 @@
 #define IASECC_ALGORITHM_ROLE_AUTH		0x1C
 #define IASECC_ALGORITHM_SYMMETRIC_SHA1		0x0C
 #define IASECC_ALGORITHM_SYMMETRIC_SHA256	0x8C
+#define IASECC_ALGORITHM_ASYMMETRIC_SHA1		0x1B
+#define IASECC_ALGORITHM_ASYMMETRIC_SHA256	0x9B
 
 #define IASECC_UQB_AT_MUTUAL_AUTHENTICATION	0xC0
 #define IASECC_UQB_AT_EXTERNAL_AUTHENTICATION	0x80
@@ -219,6 +226,12 @@ struct iasecc_sdo_keyset  {
 	struct iasecc_extended_tlv compulsory;
 };
 
+struct iasecc_sdo_ecdh {
+	struct iasecc_extended_tlv g;
+	struct iasecc_extended_tlv p;
+	struct iasecc_extended_tlv q;
+};
+
 struct iasecc_sdo  {
 	unsigned char sdo_class;
 	unsigned char sdo_ref;
@@ -232,6 +245,7 @@ struct iasecc_sdo  {
 		struct iasecc_sdo_prvkey prv_key;
 		struct iasecc_sdo_pubkey pub_key;
 		struct iasecc_sdo_keyset keyset;
+		struct iasecc_sdo_ecdh ecdh;
 	} data;
 
 	unsigned not_on_card;
@@ -321,6 +335,7 @@ int iasecc_sdo_parse_card_answer(struct sc_context *, unsigned char *, size_t, s
 int iasecc_docp_copy(struct sc_context *, struct iasecc_sdo_docp *, struct iasecc_sdo_docp *);
 int iasecc_se_get_info(struct sc_card *card, struct iasecc_se_info *se);
 
+int iasecc_sm_initialize_dh_rsa(struct sc_card *card);
 int iasecc_sm_external_authentication(struct sc_card *card, unsigned skey_ref, int *tries_left);
 int iasecc_sm_pin_verify(struct sc_card *card, unsigned se_num, struct sc_pin_cmd_data *data, int *tries_left);
 int iasecc_sm_pin_reset(struct sc_card *card, unsigned se_num, struct sc_pin_cmd_data *data);

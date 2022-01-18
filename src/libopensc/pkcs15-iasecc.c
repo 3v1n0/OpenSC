@@ -158,6 +158,7 @@ _iasecc_parse_df(struct sc_pkcs15_card *p15card, struct sc_pkcs15_df *df)
 	switch(p15card->card->type) {
 		/* enumerate the IASECC cards that need a fixup of the keyInfo */
 		case SC_CARD_TYPE_IASECC_GEMALTO:
+		case SC_CARD_TYPE_IASECC_ITA_CIE_V3:
 		case SC_CARD_TYPE_IASECC_CPX:
 		case SC_CARD_TYPE_IASECC_CPXCL:
 			sc_log(ctx, "Warning: the %d card has an invalid DF, hot patch to be applied",
@@ -232,6 +233,62 @@ iasecc_pkcs15emu_detect_card(sc_pkcs15_card_t *p15card)
 	return SC_SUCCESS;
 }
 
+static int
+sc_pkcs15_bind_ita_cie (struct sc_pkcs15_card *p15card, struct sc_aid *aid)
+{
+	struct sc_context *ctx = p15card->card->ctx;
+	char buffer[256];
+	size_t i;
+	int rv = SC_SUCCESS;
+
+	LOG_FUNC_CALLED(ctx);
+
+	// rv = sc_pkcs15_bind_internal(p15card, aid);
+	// if (rv != SC_SUCCESS)
+	// 	sc_log(ctx, "Failed to use native binding %i", rv);
+
+	set_string(&p15card->tokeninfo->label, "Carta d'Identità Elettronica");
+
+	for (i = 0; i < p15card->card->serialnr.len; i++)
+		sprintf(buffer + i*2, "%02X", *(p15card->card->serialnr.value + i));
+	buffer[i*2] = '\0';
+	set_string(&p15card->tokeninfo->serial_number, buffer);
+
+	// Get from ATR
+	set_string(&p15card->tokeninfo->manufacturer_id, "Governo Italiano");
+
+	struct sc_pkcs15_auth_info pin_info;
+	struct sc_pkcs15_object pin_obj;
+
+	memset(&pin_info, 0, sizeof(pin_info));
+	pin_info.auth_type = SC_PKCS15_PIN_AUTH_TYPE_PIN;
+	pin_info.auth_id.len = 1;
+	pin_info.auth_id.value[0] = 0;
+	pin_info.attrs.pin.reference = 0x84;
+	pin_info.attrs.pin.flags = SC_PKCS15_PIN_FLAG_CASE_SENSITIVE;
+	pin_info.attrs.pin.type = SC_PKCS15_PIN_TYPE_ASCII_NUMERIC;
+	pin_info.attrs.pin.min_length = 8;
+	pin_info.attrs.pin.stored_length = 8;
+	pin_info.attrs.pin.max_length = 8;
+	pin_info.attrs.pin.pad_char = 0xff;
+	pin_info.logged_in = SC_PIN_STATE_UNKNOWN;
+	// if(path)
+    //     pin_info.path = *path;
+
+	memset(&pin_obj, 0, sizeof(pin_obj));
+	strncpy(pin_obj.label, "Foooo Pin", 10);
+	pin_obj.flags = SC_PKCS15_CO_FLAG_PRIVATE | SC_PKCS15_CO_FLAG_MODIFIABLE;
+	// if (auth_id) {
+	// 	pin_obj.auth_id.len = 1;
+	// 	pin_obj.auth_id.value[0] = auth_id;
+	// } else
+		pin_obj.auth_id.len = 0;
+
+	return sc_pkcs15emu_add_pin_obj(p15card, &pin_obj, &pin_info);
+
+	LOG_FUNC_RETURN(ctx, rv);
+}
+
 
 static int
 sc_pkcs15emu_iasecc_init (struct sc_pkcs15_card *p15card, struct sc_aid *aid)
@@ -241,7 +298,18 @@ sc_pkcs15emu_iasecc_init (struct sc_pkcs15_card *p15card, struct sc_aid *aid)
 
 	LOG_FUNC_CALLED(ctx);
 
-	rv = sc_pkcs15_bind_internal(p15card, aid);
+	struct sc_remote_data rdata;
+	sc_remote_data_init(&rdata);
+	sc_log(ctx, "Initialize, card->sm_ctx.module.ops.initialize %p",
+		p15card->card->sm_ctx.module.ops.initialize);
+	rv = p15card->card->sm_ctx.module.ops.initialize(ctx, &p15card->card->sm_ctx.info, &rdata);
+	LOG_TEST_RET(ctx, rv, "No SM module loaded");
+
+	(void)sc_pkcs15_bind_ita_cie;
+	// if (p15card->card->type == SC_CARD_TYPE_IASECC_ITA_CIE_V3)
+	// 	rv = sc_pkcs15_bind_ita_cie(p15card, aid);
+	// else
+		rv = sc_pkcs15_bind_internal(p15card, aid);
 
 	p15card->ops.parse_df = _iasecc_parse_df;
 

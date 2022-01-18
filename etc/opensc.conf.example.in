@@ -416,6 +416,14 @@ app default {
 		read_only = false;
 		md_supports_X509_enrollment = true;
 	}
+	card_atr 3B:8F:80:01:80:31:80:65:B0:85:04:00:11:12:0F:FF:82:90:00:8A {
+		# atrmask = "FF:FF:FF:FF:FF:FF:FF:FF:00";
+		type = 25009;
+		driver = "iasecc";
+		name = "Italian CIE V3 (IAS/ECC v1.0.1)";
+		secure_messaging = local_cie;
+		# md_supports_X509_enrollment = true;
+	}
 	#card_atr 3B:DD:18:00:81:31:FE:45:80:F9:A0:00:00:00:77:01:08:00:07:90:00:FE {
 	#	type = 25002;
 	#	driver = "iasecc";
@@ -870,6 +878,11 @@ app default {
 
 		keyset_D2500000044164E86C650101_03_enc = "SIENCECHANTILLON";
 		keyset_D2500000044164E86C650101_03_mac = "SIMACECHANTILLON";
+	}
+
+	secure_messaging local_cie {
+		module_name = @DEFAULT_SM_MODULE@;
+		mode = acl; # transmit, acl
 	}
 
 	# Below are the framework specific configuration blocks.

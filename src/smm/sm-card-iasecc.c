@@ -503,8 +503,7 @@ int
 sm_iasecc_get_apdus(struct sc_context *ctx, struct sm_info *sm_info,
 	       unsigned char *init_data, size_t init_len, struct sc_remote_data *rdata, int release_sm)
 {
-	struct sm_cwa_session *cwa_session = &sm_info->session.cwa;
-	struct sm_cwa_keyset *cwa_keyset = &sm_info->session.cwa.cwa_keyset;
+	struct sm_dh_session *dh_session = &sm_info->session.dh;
 	int rv;
 
 	LOG_FUNC_CALLED(ctx);
@@ -516,15 +515,15 @@ sm_iasecc_get_apdus(struct sc_context *ctx, struct sm_info *sm_info,
 	sc_debug(ctx, SC_LOG_DEBUG_SM, "SM IAS/ECC get APDUs: rdata:%p", rdata);
 	sc_debug(ctx, SC_LOG_DEBUG_SM, "SM IAS/ECC get APDUs: serial %s", sc_dump_hex(sm_info->serialnr.value, sm_info->serialnr.len));
 
-	rv = sm_cwa_decode_authentication_data(ctx, cwa_keyset, cwa_session, init_data);
+	rv = sm_dh_rsa_decode_authentication_data(ctx, dh_session, init_data);
 	LOG_TEST_RET(ctx, rv, "SM IAS/ECC get APDUs: decode authentication data error");
 
-	rv = sm_cwa_init_session_keys(ctx, cwa_session, cwa_session->params.crt_at.algo);
-	LOG_TEST_RET(ctx, rv, "SM IAS/ECC get APDUs: cannot get session keys");
+	// rv = sm_cwa_init_session_keys(ctx, cwa_session, cwa_session->params.crt_at.algo);
+	// LOG_TEST_RET(ctx, rv, "SM IAS/ECC get APDUs: cannot get session keys");
 
-	sc_debug(ctx, SC_LOG_DEBUG_SM, "SKENC %s", sc_dump_hex(cwa_session->session_enc, sizeof(cwa_session->session_enc)));
-	sc_debug(ctx, SC_LOG_DEBUG_SM, "SKMAC %s", sc_dump_hex(cwa_session->session_mac, sizeof(cwa_session->session_mac)));
-	sc_debug(ctx, SC_LOG_DEBUG_SM, "SSC   %s", sc_dump_hex(cwa_session->ssc, sizeof(cwa_session->ssc)));
+	// sc_debug(ctx, SC_LOG_DEBUG_SM, "SKENC %s", sc_dump_hex(cwa_session->session_enc, sizeof(cwa_session->session_enc)));
+	// sc_debug(ctx, SC_LOG_DEBUG_SM, "SKMAC %s", sc_dump_hex(cwa_session->session_mac, sizeof(cwa_session->session_mac)));
+	// sc_debug(ctx, SC_LOG_DEBUG_SM, "SSC   %s", sc_dump_hex(cwa_session->ssc, sizeof(cwa_session->ssc)));
 
 	switch (sm_info->cmd)  {
 	case SM_CMD_FILE_READ:

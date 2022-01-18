@@ -262,6 +262,12 @@ iasecc_sm_se_mutual_authentication(struct sc_card *card, unsigned se_num)
 }
 #endif
 
+#ifdef ENABLE_SM
+static int
+iasecc_sm_cwa_initialize(struct sc_card *card, unsigned se_num, unsigned cmd);
+static int
+iasecc_sm_dh_rsa_initialize(struct sc_card *card, unsigned se_num, unsigned cmd);
+#endif
 
 int
 iasecc_sm_initialize(struct sc_card *card, unsigned se_num, unsigned cmd)
@@ -269,9 +275,6 @@ iasecc_sm_initialize(struct sc_card *card, unsigned se_num, unsigned cmd)
 	struct sc_context *ctx = card->ctx;
 #ifdef ENABLE_SM
 	struct sm_info *sm_info = &card->sm_ctx.info;
-	struct sm_cwa_session *cwa_session = &sm_info->session.cwa;
-	struct sc_remote_data rdata;
-	int rv;
 
 	LOG_FUNC_CALLED(ctx);
 
@@ -279,23 +282,54 @@ iasecc_sm_initialize(struct sc_card *card, unsigned se_num, unsigned cmd)
 	sm_info->cmd = cmd;
 	sm_info->serialnr = card->serialnr;
 	sm_info->card_type = card->type;
-	sm_info->sm_type = SM_TYPE_CWA14890;
+
+	/* FIXME: pass sm_type from argument */
+	if (!sm_info->sm_type)
+		sm_info->sm_type = SM_TYPE_CWA14890;
+
+	switch (sm_info->sm_type)
+		{
+			case SM_TYPE_CWA14890:
+				LOG_FUNC_RETURN(ctx, iasecc_sm_cwa_initialize(card, se_num, cmd));
+			case SM_TYPE_DH_RSA:
+				LOG_FUNC_RETURN(ctx, iasecc_sm_dh_rsa_initialize(card, se_num, cmd));
+			default:
+				LOG_FUNC_RETURN(ctx, SC_ERROR_NOT_SUPPORTED);
+		}
+
+#else
+	LOG_TEST_RET(ctx, SC_ERROR_NOT_SUPPORTED, "built without support of Secure-Messaging");
+	return SC_ERROR_NOT_SUPPORTED;
+#endif
+}
+
+#ifdef ENABLE_SM
+static int
+iasecc_sm_cwa_initialize(struct sc_card *card, unsigned se_num, unsigned cmd)
+{
+	struct sc_context *ctx = card->ctx;
+	struct sm_info *sm_info = &card->sm_ctx.info;
+	struct sm_cwa_session *cwa_session = &sm_info->session.cwa;
+	struct sc_remote_data rdata;
+	int rv;
+
+	LOG_FUNC_CALLED(ctx);
 
 	rv = iasecc_sm_se_mutual_authentication(card, se_num);
-	LOG_TEST_RET(ctx, rv, "iasecc_sm_initialize() MUTUAL AUTHENTICATION failed");
+	LOG_TEST_RET(ctx, rv, "iasecc_sm_cwa_initialize() MUTUAL AUTHENTICATION failed");
 
 	rv = sc_get_challenge(card, cwa_session->card_challenge, SM_SMALL_CHALLENGE_LEN);
-	LOG_TEST_RET(ctx, rv, "iasecc_sm_initialize() GET CHALLENGE failed");
+	LOG_TEST_RET(ctx, rv, "iasecc_sm_cwa_initialize() GET CHALLENGE failed");
 
 	sc_remote_data_init(&rdata);
 
 	rv = sm_save_sc_context(card, sm_info);
-	LOG_TEST_RET(ctx, rv, "iasecc_sm_initialize() cannot save current context");
+	LOG_TEST_RET(ctx, rv, "iasecc_sm_cwa_initialize() cannot save current context");
 
 	if (!card->sm_ctx.module.ops.initialize)
-		LOG_TEST_RET(ctx, SC_ERROR_SM_NOT_INITIALIZED, "iasecc_sm_initialize() no SM module");
+		LOG_TEST_RET(ctx, SC_ERROR_SM_NOT_INITIALIZED, "iasecc_sm_cwa_initialize() no SM module");
 	rv = card->sm_ctx.module.ops.initialize(ctx, sm_info, &rdata);
-	LOG_TEST_RET(ctx, rv, "iasecc_sm_initialize() INITIALIZE failed");
+	LOG_TEST_RET(ctx, rv, "iasecc_sm_cwa_initialize() INITIALIZE failed");
 
 
 	if (rdata.length == 1)   {
@@ -310,7 +344,7 @@ iasecc_sm_initialize(struct sc_card *card, unsigned se_num, unsigned cmd)
 	rv = iasecc_sm_transmit_apdus (card, &rdata, cwa_session->mdata, &cwa_session->mdata_len);
 	if (rv == SC_ERROR_PIN_CODE_INCORRECT)
 		sc_log(ctx, "SM initialization failed, %i tries left", (rdata.data + rdata.length - 1)->apdu.sw2 & 0x0F);
-	LOG_TEST_RET(ctx, rv, "iasecc_sm_initialize() transmit APDUs failed");
+	LOG_TEST_RET(ctx, rv, "iasecc_sm_cwa_initialize() transmit APDUs failed");
 
 	rdata.free(&rdata);
 
@@ -318,14 +352,40 @@ iasecc_sm_initialize(struct sc_card *card, unsigned se_num, unsigned cmd)
 	       cwa_session->mdata_len,
 	       sc_dump_hex(cwa_session->mdata, cwa_session->mdata_len));
 	if (cwa_session->mdata_len != 0x48)
-		LOG_TEST_RET(ctx, SC_ERROR_INVALID_DATA, "iasecc_sm_initialize() invalid MUTUAL AUTHENTICATE result data");
+		LOG_TEST_RET(ctx, SC_ERROR_INVALID_DATA, "iasecc_sm_cwa_initialize() invalid MUTUAL AUTHENTICATE result data");
 
 	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
-#else
-	LOG_TEST_RET(ctx, SC_ERROR_NOT_SUPPORTED, "built without support of Secure-Messaging");
-	return SC_ERROR_NOT_SUPPORTED;
-#endif
 }
+
+static int
+iasecc_sm_dh_rsa_initialize(struct sc_card *card, unsigned se_num, unsigned cmd)
+{
+	struct sc_context *ctx = card->ctx;
+
+	LOG_FUNC_CALLED(ctx);
+
+	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
+}
+
+int
+iasecc_sm_initialize_dh_rsa(struct sc_card *card)
+{
+	struct sc_context *ctx = card->ctx;
+	struct sm_info *sm_info = &card->sm_ctx.info;
+	// struct sc_crt *crt =  &sm_info->session.cwa.params.crt_at;
+
+	LOG_FUNC_CALLED(ctx);
+
+	strlcpy(sm_info->config_section, card->sm_ctx.config_section, sizeof(sm_info->config_section));
+	// sm_info->cmd = SM_CMD_EXTERNAL_AUTH;
+	sm_info->serialnr = card->serialnr;
+	sm_info->card_type = card->type;
+	sm_info->sm_type = SM_TYPE_DH_RSA;
+	// sm_info->session.dh. <-- set CRT_AT algorithm!
+
+	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
+}
+#endif
 
 
 #ifdef ENABLE_SM

@@ -266,6 +266,15 @@ initialize(struct sc_context *ctx, struct sm_info *sm_info, struct sc_remote_dat
 			rv = sm_cwa_initialize(ctx, sm_info, out);
 			LOG_TEST_RET(ctx, rv, "SM iasecc initializing error");
 			break;
+		case SM_TYPE_DH_RSA:
+			// rv = sm_dh_rsa_config_get_keyset(ctx, sm_info);
+			// LOG_TEST_RET(ctx, rv, "SM DH RSA iasecc configuration error");
+
+			rv = sm_dh_rsa_initialize(ctx, sm_info, out);
+			LOG_TEST_RET(ctx, rv, "SM DH RSA iasecc initializing error");
+			rv = sm_dh_rsa_init_session_keys(ctx, &sm_info->session.dh, IASECC_ALGORITHM_ASYMMETRIC_SHA256);
+			LOG_TEST_RET(ctx, rv, "SM DH RSA iasecc initializing error");
+			break;
 		default:
 			LOG_TEST_RET(ctx, SC_ERROR_NOT_SUPPORTED, "unsupported SM type");
 	};

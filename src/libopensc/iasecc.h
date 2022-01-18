@@ -22,9 +22,12 @@
 #ifndef _OPENSC_IASECC_H
 #define _OPENSC_IASECC_H
 
+#include <openssl/sha.h>
+
 #include "libopensc/errors.h"
 #include "libopensc/types.h"
 #include "libopensc/iasecc-sdo.h"
+#include "libopensc/pkcs15.h"
 
 #define ISO7812_PAN_SN_TAG	0x5A
 
@@ -90,6 +93,10 @@
 #define IASECC_SM_DO_TAG_TCG	0x87 
 #define IASECC_SM_DO_TAG_TBR	0x85 
 
+#define IASECC_KEY_AGREEMENT_TAG_G	23
+#define IASECC_KEY_AGREEMENT_TAG_P	24
+#define IASECC_KEY_AGREEMENT_TAG_Q	25
+
 struct sc_security_env;
 
 typedef struct iasecc_qsign_data {
@@ -123,6 +130,23 @@ struct iasecc_io_buffer_sizes {
 	size_t recv_sc;
 };
 
+struct iasecc_ita_cie {
+	struct sc_pkcs15_pubkey_rsa servizi_pubkey;
+	struct sc_pkcs15_pubkey_rsa privacy_auth_key;
+	u8 sha_512_digest[SHA512_DIGEST_LENGTH];
+	u8 card_seed[256];
+	u8 enc_key[32];
+	u8 enc_iv[16];
+
+	struct {
+		size_t size;
+		u8 *value;
+		int digest_algorithm;
+	} sod;
+
+	// PAN?
+};
+
 struct iasecc_private_data {
 	struct iasecc_version version;
 	struct iasecc_io_buffer_sizes max_sizes;
@@ -131,7 +155,25 @@ struct iasecc_private_data {
 	size_t key_size;
 	unsigned op_method, op_ref;
 
+	// Add only CIE struct
+	struct sc_pkcs15_pubkey_rsa privacy_auth_key;
 	struct iasecc_se_info *se_info;
+	struct iasecc_ita_cie *cie_data;
+
+	struct {
+		u8 *g;
+		size_t g_len;
+		u8 *p;
+		size_t p_len;
+		u8 *q;
+		size_t q_len;
+
+		u8 *icc_pubkey;
+		size_t icc_pubkey_len;
+
+		u8 *shared_secret;
+		size_t shared_secret_len;
+	} key_exchange;
 };
 
 #endif
